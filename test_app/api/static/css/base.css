@@ -1,0 +1,12 @@
+body {
+    position: absolute;
+    display: block;
+    height: 100%;
+    width: 100%;
+}
+#main {
+    position: relative;
+    width: 70%;
+    margin: 0 auto;
+    background: linear-gradient(#FFF,cornflowerblue) no-repeat !important;
+}
