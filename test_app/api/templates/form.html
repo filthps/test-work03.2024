@@ -3,14 +3,39 @@
 {% load static %}
 {% block head %}
     <link rel="stylesheet" href="{% static 'css/bootstrap.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/form.css' %}">
 {% endblock head %}
 {% block body %}
-<form action="" method="post" class="form-horizontal">
-    {% csrf_token %}
-    <div class="col-sm-offset-2 col-sm-10">
-{% render_form form %}
-    </div>
-    <button type="submit" class="btn btn-default">Анализировать текст</button>
-    </form>
+    <form class="form-horizontal">
+        {% csrf_token %}
+        <div class="col-sm-offset-2 col-sm-10">
+    {% render_form form %}
+        </div>
+        <div class="buttons-group">
+            <input type="submit" class="btn btn-default generate" formaction="{% url 'generate_text' %}" formmethod="post" value="Сгенерировать текст"/>
+            <button type="submit" class="btn btn-default submit" formaction="{% url 'form_page' %}" formmethod="post">Анализировать текст</button>
+        </div>
+        </form>
 {% endblock body %}
+{% block scripts %}
+    <script type="text/javascript">
+        function get_token() {
+            var token = "{{ csrf_token }}";
+            return token;
+        };
+        function get_urls() {
+            var o = new Object();
+            o["page_url"] = '{% url "form_page" %}';
+            o["text_gen"] = '{% url "generate_text" %}';
+            return o
+        };
+        function get_static_url() {
+            return '{% static "" %}';
+        };
+    </script>
+    <script type="module" src="{% static 'js/form.js' %}"></script>
+    <script type="module" src="{% static 'js/settings.js' %}"></script>
+    <script nomodule src="{% static 'js/alt_form.js' %}"></script>
+    <script nomodule src="{% static 'js/alt_settings.js' %}"></script>
+{% endblock scripts %}
 
