@@ -1,11 +1,14 @@
 import re
 from faker import Faker
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Union
 from django.shortcuts import render, redirect
 from django.db.transaction import atomic
+from django.http import HttpRequest as DjangoRequest
 from django.views.generic.base import TemplateView
+from rest_framework.request import Request as DRFRequest
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.renderers import BrowsableAPIRenderer, JSONRenderer, HTMLFormRenderer
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.status import HTTP_413_REQUEST_ENTITY_TOO_LARGE, HTTP_201_CREATED, HTTP_200_OK
@@ -13,6 +16,16 @@ from rest_framework.renderers import JSONRenderer
 from rest_framework.generics import ListAPIView, GenericAPIView, CreateAPIView
 from .models import Text, Word
 from .serializers import JSONSerializer
+
+
+class Tools:
+    @staticmethod
+    def is_ajax(request: Union[DjangoRequest, DRFRequest]) -> Optional[bool]:
+        if not isinstance(request, (DjangoRequest, DRFRequest,)):
+            raise TypeError
+        if "X-Requested-With" in request.headers:
+            if request.headers["X-Requested-With"] == "XMLHttpRequest":
+                return True
 
 
 class WordInstanceFactory:
@@ -57,9 +70,9 @@ class WordInstanceFactory:
 class FormPage(CreateAPIView, TemplateView):
     template_name = "form.html"
     http_method_names = ("get", "post",)
-    renderer_classes = (HTMLFormRenderer, JSONRenderer,)
     serializer_class = JSONSerializer
     extra_context = {"form": JSONSerializer}
+    parser_classes = (FormParser,)
 
     def perform_create(self, serializer: JSONSerializer):
         with atomic():
@@ -76,12 +89,12 @@ class Loader(ListAPIView):
     queryset = Word.objects.prefetch_related("text")
 
 
-class GenerateTextView(APIView):  # ajax generate random text
+class GenerateTextView(APIView, Tools):  # ajax generate random text
     http_method_names = ("post",)
 
     def post(self, request):
         faker_ = Faker()
         random_text = faker_.text()
-        if request.is_ajax:
+        if self.is_ajax(request):
             return Response(data=JSONSerializer(text=random_text), status=HTTP_200_OK)
         return Response(template_name="", status=HTTP_200_OK, data={"text": random_text})

@@ -124,3 +124,7 @@ STATIC_ROOT = os.path.join(BASE_DIR, STATIC_URL)
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+REST_FRAMEWORK = {
+    'EXCEPTION_HANDLER': 'drf_pretty_exception_handler.exception_handler',
+}
