@@ -61,7 +61,7 @@ window.onload = () => {
                 var filter = (arr_t) => {
                     " Заменить символы в конце слова (предложения, оборота... итп)"
                     var result_arr = arr_t.slice(0);
-                    var word_r = new RegExp(/\w+|[а-яФ-Я]+[\,\.;]$/, "s");
+                    var word_r = new RegExp(/\w+|[а-яА-Я]+[\,\.;]$/, "s");
                     for (var i = 0; i < arr_t.length; i++) {
                         var match = arr_t[i].match(word_r);
                         if (match) {
@@ -73,20 +73,32 @@ window.onload = () => {
                     }
                     return result_arr;
                 };
+                var to_small_case = (arr) => {
+                    var small_words = [];
+                    while (arr.length) {
+                        let word = arr.pop();
+                        small_words.push(word);
+                    }
+                    return small_words;
+                };
                 const form = new FormData();
                 var arr = str.split(" ");
                 var arr = filter(arr);
-                form.set("arr", arr);
+                var arr = to_small_case(arr);
+                for (var i = 0; i < arr.length; i++) {
+                    form.append("words", arr[i]);
+                }
                 return form;
             };
             if (!form_validation()) {
+                document.forms[0].getQuerySelector("form-control").setCustomValidity("Текст неразборчив или пуст");
                 return;
             }
             var request = new XMLHttpRequest();
             request.open("POST", XHR_API_URL, true);
             request.setRequestHeader("X-CSRFToken", CSRF_TOKEN);
             request.setRequestHeader("X-Requested-With", "XMLHttpRequest");
-            request.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+            //request.setRequestHeader("Content-Type", "multipart/form-data");
             request.send(dumps(document.forms[0].querySelector(".form-control").value));
         };
         document.querySelector(".generate").addEventListener("click", generate_text);
