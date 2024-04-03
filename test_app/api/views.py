@@ -1,9 +1,10 @@
 import re
-from faker import Faker
 from typing import Iterable, Optional, Union
+from faker import Faker
 from django.shortcuts import render, redirect
 from django.db.transaction import atomic
-from django.http import HttpRequest as DjangoRequest
+from django.db.models import Count, Value, F, Func, Subquery
+from django.http import HttpRequest as DjangoRequest, HttpResponse
 from django.views.generic.base import TemplateView
 from rest_framework.request import Request as DRFRequest
 from rest_framework.pagination import PageNumberPagination
@@ -15,7 +16,7 @@ from rest_framework.status import HTTP_413_REQUEST_ENTITY_TOO_LARGE, HTTP_201_CR
 from rest_framework.renderers import JSONRenderer
 from rest_framework.generics import ListAPIView, GenericAPIView, CreateAPIView
 from .models import Text, Word
-from .serializers import JSONSerializer
+from .serializers import AddTextSerializer, ViewWordSerializer
 
 
 class Tools:
@@ -34,8 +35,8 @@ class WordInstanceFactory:
     @classmethod
     def get_items(cls, data: dict):
         cls.__is_valid(data)
-        if data["arr"]:
-            return cls.__create_instances_best_case(cls.foreign_key_instance, data["arr"])
+        if data["words"]:
+            return cls.__create_instances_best_case(cls.foreign_key_instance, data["words"])
         if data["text"]:
             return cls.__create_instances_emergency_case(cls.foreign_key_instance, data["text"])
 
@@ -56,10 +57,10 @@ class WordInstanceFactory:
             raise TypeError
         if type(data) is not dict:
             raise TypeError
-        if not any([data.get("arr", None), data.get("text", None)]):
+        if not any([data.get("words", None), data.get("text", None)]):
             raise ValueError
-        if data["arr"]:
-            if not hasattr(data["arr"], "__iter__"):
+        if data["words"]:
+            if not hasattr(data["words"], "__iter__"):
                 raise TypeError("Ожидалась итерируемая последовательность!")
             return
         if data["text"]:
@@ -70,23 +71,52 @@ class WordInstanceFactory:
 class FormPage(CreateAPIView, TemplateView):
     template_name = "form.html"
     http_method_names = ("get", "post",)
-    serializer_class = JSONSerializer
-    extra_context = {"form": JSONSerializer}
-    parser_classes = (FormParser,)
+    serializer_class = AddTextSerializer
+    extra_context = {"form": AddTextSerializer}
+    parser_classes = (MultiPartParser,)
 
-    def perform_create(self, serializer: JSONSerializer):
+    def perform_create(self, serializer: AddTextSerializer) -> int:
         with atomic():
             text_instance = Text.objects.create(add_by=self.request.user)
             WordInstanceFactory.foreign_key_instance = text_instance
-            Word.objects.bulk_create(*WordInstanceFactory.get_items(serializer.data))
+            word_model_instance_collection = WordInstanceFactory.get_items(dict(serializer.data))
+            Word.objects.bulk_create(word_model_instance_collection)
+        return text_instance.id
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        text_pk = self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return HttpResponse("statistic", text_pk, status=HTTP_201_CREATED, headers=headers)
 
 
-class Loader(ListAPIView):
+class StatisticPage(ListAPIView, TemplateView):
     class Paginator(PageNumberPagination):
-        page_size = 50
+        page_size = 10
+    http_method_names = ("get",)
     pagination_class = Paginator
-    serializer_class = JSONSerializer
-    queryset = Word.objects.prefetch_related("text")
+    queryset = Word.objects.prefetch_related("text").prefetch_related("text__add_by").values_list("word").annotate(  # values_list - > SELECT ..., COUNT(*) GROUP BY word
+                tf=Count(Value("word"), distinct=False)).values("word", "tf", "text_id", "text",).annotate(
+                user_id=F("text__add_by"), username=F("text__add_by__username"), idf=Count(Value("word"), distinct=True) / F("tf"))
+    template_name = "stat.html"
+    serializer_class = ViewWordSerializer
+
+    def list(self, *args, **kwargs):
+        self.request.text_id = kwargs.get("textid", None)
+        response_instance: Response = super().list(*args, **kwargs)
+        return Response(status=HTTP_200_OK, data={"data": response_instance.data})
+
+    def get_queryset(self):
+        if self.request.text_id is not None:
+            qs = Word.objects.filter(
+                text_id=self.request.text_id).prefetch_related("text").prefetch_related(
+                "text__add_by").values_list("word").annotate(  # values_list('word') - > SELECT ..., COUNT(*) GROUP BY word
+                tf=Count(Value("word"), distinct=False)).values("word", "tf", "text_id", "text").annotate(
+                user_id=F("text__add_by"), username=F("text__add_by__username"), idf=Count(Value("word"), distinct=True) / F("tf"))
+            print(qs)
+            return qs
+        return super().get_queryset()
 
 
 class GenerateTextView(APIView, Tools):  # ajax generate random text
@@ -96,5 +126,5 @@ class GenerateTextView(APIView, Tools):  # ajax generate random text
         faker_ = Faker()
         random_text = faker_.text()
         if self.is_ajax(request):
-            return Response(data=JSONSerializer(text=random_text), status=HTTP_200_OK)
+            return Response(data=AddTextSerializer(text=random_text), status=HTTP_200_OK)
         return Response(template_name="", status=HTTP_200_OK, data={"text": random_text})

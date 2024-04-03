@@ -9,7 +9,7 @@ MAX_WORDS_COUNT = 200
 
 
 def check_multi_words(s: str):
-    words_count = len(re.match(r"\b", s).groups())
+    words_count = len(re.match(r"\b^-", s).groups())
     if words_count > 1:
         raise ValidationError
     if words_count > MAX_WORDS_COUNT:
@@ -26,8 +26,8 @@ class Text(models.Model):
 
 
 class Word(models.Model):
-    id = models.CharField(default=lambda: uuid.uuid4().__str__(), primary_key=True, max_length=100)
-    text = models.ForeignKey(Text, on_delete=models.CASCADE, blank=False)
+    id = models.CharField(default=uuid.uuid4, primary_key=True, max_length=30)
+    text = models.ForeignKey(Text, on_delete=models.CASCADE, blank=False, related_name="text_word")
     word = models.CharField(max_length=40, blank=False, validators=[check_multi_words])
 
     def __str__(self):
