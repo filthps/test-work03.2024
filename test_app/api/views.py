@@ -93,12 +93,9 @@ class FormPage(CreateAPIView, TemplateView):
 
 class StatisticPage(ListAPIView, TemplateView):
     class Paginator(PageNumberPagination):
-        page_size = 10
+        page_size = 50
     http_method_names = ("get",)
     pagination_class = Paginator
-    queryset = Word.objects.prefetch_related("text").prefetch_related("text__add_by").values_list("word").annotate(  # values_list - > SELECT ..., COUNT(*) GROUP BY word
-                tf=Count(Value("word"), distinct=False)).values("word", "tf", "text_id", "text",).annotate(
-                user_id=F("text__add_by"), username=F("text__add_by__username"), idf=Count(Value("word"), distinct=True) / F("tf"))
     template_name = "stat.html"
     serializer_class = ViewWordSerializer
 
@@ -108,15 +105,15 @@ class StatisticPage(ListAPIView, TemplateView):
         return Response(status=HTTP_200_OK, data={"data": response_instance.data})
 
     def get_queryset(self):
+        total_text_count = Text.objects.count()
+        qs = Word.objects.all()
         if self.request.text_id is not None:
-            qs = Word.objects.filter(
-                text_id=self.request.text_id).prefetch_related("text").prefetch_related(
-                "text__add_by").values_list("word").annotate(  # values_list('word') - > SELECT ..., COUNT(*) GROUP BY word
-                tf=Count(Value("word"), distinct=False)).values("word", "tf", "text_id", "text").annotate(
-                user_id=F("text__add_by"), username=F("text__add_by__username"), idf=Count(Value("word"), distinct=True) / F("tf"))
-            print(qs)
-            return qs
-        return super().get_queryset()
+            qs = Word.objects.filter(text_id=self.request.text_id)
+        qs.select_related("text").prefetch_related("text__add_by").values_list("word").annotate(  # values_list('word') - > GROUP BY word
+            tf=Count(Value("word"), distinct=True) * "1." / Count(Value("word"), distinct=False)).values("word", "tf", "text_id", "text").annotate(
+            user_id=F("text__add_by"), username=F("text__add_by__username"), idf=Func( function="LOG"))
+        print(qs)
+        return qs
 
 
 class GenerateTextView(APIView, Tools):  # ajax generate random text

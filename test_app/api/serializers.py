@@ -5,7 +5,7 @@ from .models import MAX_WORDS_COUNT, Text, Word
 
 
 class AddTextSerializer(serializers.Serializer):
-    text = serializers.CharField(max_length=2000, label="", required=False)
+    text = serializers.CharField(max_length=2000, label="", required=False, style={"base_template": "textarea.html", "rows": 5})
     words = serializers.ListField(child=serializers.CharField(), min_length=1,
                                   max_length=MAX_WORDS_COUNT, label="", required=False)
 
