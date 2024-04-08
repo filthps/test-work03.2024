@@ -13,7 +13,14 @@
     box-sizing: border-box;
     font-size: 14px;
     text-shadow: 1px 1px 0 white;
+    transition: 1s;
 }
 .form-control-static {
     display: none;
+}
+
+.form-control.error {
+  background: #ff8686;
+  border: 2px solid #cc2e2e;
+  text-shadow: 1px 1px 0 #b59b9b;
 }

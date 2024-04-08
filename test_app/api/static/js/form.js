@@ -1,6 +1,6 @@
 "  Использовать ресурсы броузера для генерации текста и его разделения по словам. "
-" Если броузер не работает с библиотекой Faker в броузере, то делам запрос нга API "
-" Если не работают асинхронные запросы, то делаем запрос с получением документа целиком "
+" Если броузер не работает с библиотекой Faker в броузере, то делам запрос на API /get-text "
+" Если не работают асинхронные запросы, то делаем запрос с получением документа и сгенерированного текста целиком "
 import {USE_API_FAKER, USE_BROWSER_FAKER, USE_SUBMIT_AND_PAGE_RELOAD, CustomFaker} from '/static/js/settings.js';
 const API_GET_TEXT_URL = get_urls()["text_gen"];
 const XHR_API_URL = get_urls()["page_url"];
@@ -21,88 +21,121 @@ window.onload = () => {
     check_configuration();
 
     (() => {
-        var form_validation = (is_debug=false) => {
-            let form = document.forms[0];
-            let text = form.querySelector(".form-control").value;
-            if (text == "") {
+        var dumps = (str) => {
+            " 1) Черновая разбивка текста на отдельные слова "
+            var split_by_space = (str_) => {
+                return str_.split(" ");
+            };
+            var filter = (arr_t) => {
+                "2) Очистить слово от не относящихся к слову символов "
+                var result_arr = [];
+                var word_r = new RegExp(/\w+|[а-яА-Я]+/, "s");
+                for (var i = 0; i < arr_t.length; i++) {
+                    var match = arr_t[i].match(word_r);
+                    if (match && match.length) {
+                        result_arr.push(match[0]);
+                    }
+                }
+                return result_arr;
+            };
+            var to_small_case = (arr) => {
+                " 3) Всё в единый регистр - нижний "
+                var small_words = [];
+                while (arr.length) {
+                    let word = arr.pop();
+                    word = word.toLowerCase();
+                    small_words.push(word);
+                }
+                return small_words;
+            };
+            return to_small_case(filter(split_by_space(str)));
+        };
+        var is_valid = (event_or_null) => {
+            var value = !event_or_null === null ? event_or_null.target.value :
+            document.forms[0].querySelector(".form-control").value;
+            if (!value.length) {
+                document.forms[0].getElementsByTagName("textarea")[0].setCustomValidity("Текст неразборчив или пуст");
+                document.forms[0].getElementsByTagName("textarea")[0].className += " error";
                 return false;
             }
-            var bad_chars_in_word = new RegExp(/\b[^-\s]\b/, "s");  // Плохие символы внутри слова
-            var bad_word = new RegExp(/\b[^a-zA-Z]+\b/, "s");  // Всё слово целиком
-            var words = text.split(" ");
-            for (var i = 0; i < words.length; i++) {
-                if (words[i].match(bad_word)) {
-                    if (is_debug) {
-                        return words[i];
-                    }
+                if (dumps(value).length > 0) {
+                    document.forms[0].getElementsByTagName("textarea")[0].setCustomValidity("");
+                    document.forms[0].getElementsByTagName("textarea")[0].classList.remove("error");
+                } else {
+                    document.forms[0].getElementsByTagName("textarea")[0].setCustomValidity("Текст неразборчив или пуст");
+                    document.forms[0].getElementsByTagName("textarea")[0].className += " error";
                     return false;
                 }
-                if (words[i].match(bad_chars_in_word)) {
-                    if (is_debug) {
-                        return words[i];
-                    }
-                    return false;
-                }
-            }
             return true;
         };
+        var reset_form = (event) => {
+            if (!event.target.status == 201) {
+                return;
+            }
+            document.forms[0].getElementsByTagName("textarea")[0].value = "";
+        };
+        var load_random_text_from_api = (ev) => {
+            var request = new XMLHttpRequest();
+            request.addEventListener("load", function(event) {
+                if (event.target.status == 200) {
+                    var text = JSON.parse(event.target.responseText);
+                    document.forms[0].getElementsByTagName("textarea")[0].value = text["text"];
+                    is_valid();
+                }
+            });
+            request.open("POST", API_GET_TEXT_URL);
+            request.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+            request.setRequestHeader("X-CSRFToken", CSRF_TOKEN);
+            request.send();
+            if (ev) {
+                ev.stopPropagation();
+                ev.preventDefault();
+            }
+        };
         var generate_text = (ev) => {
+            try {
+                var text = CustomFaker.lorem.text();
+                } catch(er) {
+                load_random_text_from_api(null);
+                return;
+            }
+            add_into_form(text);
             ev.stopPropagation();
             ev.preventDefault();
-            var text = CustomFaker.lorem.text();
-            add_into_form(text);
+            document.forms[0].getElementsByTagName("textarea")[0].classList.remove("error");            
         };
         var add_into_form = (text) => {
             document.forms[0].querySelector(".form-control").value = text;
         };
         var xhr_send_text_to_api = (ev) => {
             ev.preventDefault();
-            var dumps = (str) => {
-                var filter = (arr_t) => {
-                    " Заменить символы в конце слова (предложения, оборота... итп)"
-                    var result_arr = arr_t.slice(0);
-                    var word_r = new RegExp(/\w+|[а-яА-Я]+[\,\.;]$/, "s");
-                    for (var i = 0; i < arr_t.length; i++) {
-                        var match = arr_t[i].match(word_r);
-                        if (match) {
-                            var match = match[0];
-                            let symbol = match.slice(match.length - 1, match.length);
-                            let word = result_arr[i];
-                            result_arr[i] = word.slice(0, word.indexOf(symbol)) + word.slice(word.indexOf(symbol) + 1, word.length);
-                        }
-                    }
-                    return result_arr;
-                };
-                var to_small_case = (arr) => {
-                    var small_words = [];
-                    while (arr.length) {
-                        let word = arr.pop();
-                        small_words.push(word);
-                    }
-                    return small_words;
-                };
-                const form = new FormData();
-                var arr = str.split(" ");
-                var arr = filter(arr);
-                var arr = to_small_case(arr);
-                for (var i = 0; i < arr.length; i++) {
-                    form.append("words", arr[i]);
+
+            var add_to_formdata = (arr) => {
+                var form = new FormData();
+                while (arr.length > 0) {
+                    form.append("words", arr.pop(0));
                 }
                 return form;
             };
-            if (!form_validation()) {
-                document.forms[0].getQuerySelector("form-control").setCustomValidity("Текст неразборчив или пуст");
-                return;
-            }
             var request = new XMLHttpRequest();
+            request.onloadend = reset_form;
             request.open("POST", XHR_API_URL, true);
             request.setRequestHeader("X-CSRFToken", CSRF_TOKEN);
             request.setRequestHeader("X-Requested-With", "XMLHttpRequest");
-            //request.setRequestHeader("Content-Type", "multipart/form-data");
-            request.send(dumps(document.forms[0].querySelector(".form-control").value));
+            var cleaned_data = dumps(document.forms[0].querySelector(".form-control").value);
+            if (!is_valid()) {
+               return;
+            }
+            const form = add_to_formdata(cleaned_data);
+            request.send(form);
         };
-        document.querySelector(".generate").addEventListener("click", generate_text);
+        if (USE_BROWSER_FAKER) {
+            document.querySelector(".generate").addEventListener("click", generate_text);
+        }
+        if (USE_API_FAKER) {
+            document.querySelector(".generate").addEventListener("click", load_random_text_from_api);
+        }
         document.querySelector(".submit").addEventListener("click", xhr_send_text_to_api);
+        document.forms[0].getElementsByTagName("textarea")[0].addEventListener("keyup", is_valid);
     })();
-
 };
