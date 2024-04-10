@@ -12,10 +12,10 @@ window.onload = () => {
         throw new Error();
     }
     if (USE_API_FAKER && USE_BROWSER_FAKER && USE_SUBMIT_AND_PAGE_RELOAD) {
-        throw new Error();
+        throw new Error("Установите значение true для одной из 3 констант");
     }
     if (!USE_API_FAKER && !USE_BROWSER_FAKER && !USE_SUBMIT_AND_PAGE_RELOAD) {
-        throw new Error();
+        throw new Error("Установите значение true для одной из 3 констант");
     }
     };
     check_configuration();
@@ -109,7 +109,12 @@ window.onload = () => {
         };
         var xhr_send_text_to_api = (ev) => {
             ev.preventDefault();
-
+            var on_success_redirect = (e) => {
+                if (event.target.status == 201) {
+                    console.log(JSON.parse(event.target.responseText));
+                    window.location.href = (document.location.origin + JSON.parse(event.target.responseText)).replace(/['"«»]/g, '');
+                }
+            };
             var add_to_formdata = (arr) => {
                 var form = new FormData();
                 while (arr.length > 0) {
@@ -118,7 +123,8 @@ window.onload = () => {
                 return form;
             };
             var request = new XMLHttpRequest();
-            request.onloadend = reset_form;
+            request.addEventListener("load", reset_form);
+            request.addEventListener("load", on_success_redirect);
             request.open("POST", XHR_API_URL, true);
             request.setRequestHeader("X-CSRFToken", CSRF_TOKEN);
             request.setRequestHeader("X-Requested-With", "XMLHttpRequest");
@@ -129,6 +135,9 @@ window.onload = () => {
             const form = add_to_formdata(cleaned_data);
             request.send(form);
         };
+        if (USE_SUBMIT_AND_PAGE_RELOAD) {
+            return;
+        }
         if (USE_BROWSER_FAKER) {
             document.querySelector(".generate").addEventListener("click", generate_text);
         }

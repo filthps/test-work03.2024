@@ -1,4 +1,6 @@
-from django.db.transaction import atomic
+import json
+from typing import Optional
+from django.db import transaction
 from django.db.models import Count, Value, F, Func, FloatField
 from django.urls import reverse
 from django.http import HttpResponse
@@ -8,7 +10,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.status import HTTP_201_CREATED, HTTP_200_OK
+from rest_framework.status import HTTP_201_CREATED, HTTP_200_OK, HTTP_400_BAD_REQUEST
 from rest_framework.parsers import MultiPartParser
 from rest_framework.generics import ListAPIView, CreateAPIView
 from .models import Text, Word
@@ -24,19 +26,27 @@ class FormPage(LoginRequiredMixin, CreateAPIView, TemplateView, Tools):
     extra_context = {"form": AddTextSerializer}
     parser_classes = (MultiPartParser,)
 
-    def perform_create(self, serializer: AddTextSerializer) -> int:
-        with atomic():
+    def perform_create(self, serializer: AddTextSerializer) -> Optional[int]:
+        with transaction.atomic():
             text_instance = Text.objects.create(add_by=self.request.user)
             WordInstanceFactory.foreign_key_instance = text_instance
             word_model_instance_collection = WordInstanceFactory.get_items(dict(serializer.data))
+            if not word_model_instance_collection:
+                transaction.set_rollback(True)
+                return
             Word.objects.bulk_create(word_model_instance_collection)
         return text_instance.id
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        text_pk = self.perform_create(serializer)
+        serializer: AddTextSerializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            text_pk = self.perform_create(serializer)
+        if not serializer.is_valid() or not text_pk:
+            serializer.validate_after_text_parse(False)
+            return Response(template_name=self.template_name, data={"form": serializer}, status=HTTP_400_BAD_REQUEST)
         headers = self.get_success_headers(serializer.data)
+        if self.is_ajax:
+            return Response(data=json.dumps(reverse("statistic", args=(text_pk,))), status=HTTP_201_CREATED, headers=headers, content_type="text/json")
         return HttpResponse("statistic", text_pk, status=HTTP_201_CREATED, headers=headers)
 
     def get_context_data(self, **kwargs):
@@ -57,7 +67,7 @@ class StatisticPage(ListAPIView, TemplateView):
     def list(self, *args, **kwargs):
         self.request.text_id = kwargs.get("textid", None)
         response_instance: Response = super().list(*args, **kwargs)
-        return Response(status=HTTP_200_OK, data={"data": response_instance.data})
+        return Response(status=HTTP_200_OK, data={"data": response_instance.data}, template_name=self.template_name)
 
     def get_queryset(self):
         total_text_count = Text.objects.count()
@@ -72,10 +82,10 @@ class StatisticPage(ListAPIView, TemplateView):
         return qs
 
 
-class GenerateTextView(APIView, TemplateView, Tools):  # ajax generate random text
+class GenerateTextView(APIView, TemplateView, Tools):
     http_method_names = ("post",)
 
     def post(self, *args):
         if self.is_ajax:
             return Response({"text": self.generate_random_text()}, status=HTTP_200_OK, content_type="application/json")
-        return redirect(reverse("form_page") + "?gentext")  # todo: fixit в броузере не меняется текущий URL
+        return redirect(reverse("form_page") + "?gentext")
